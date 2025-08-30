@@ -142,4 +142,4 @@ COMPARE_ONLY=1 python spotify_to_ytm.py
 ---
 
 ## 8) License
-MIT (or your preference).
+MIT ©
