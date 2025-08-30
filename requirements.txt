@@ -1,0 +1,4 @@
+spotipy
+ytmusicapi
+python-dotenv
+tenacity
