@@ -1,83 +1,133 @@
 # Spotify → YouTube Music Transfer
 
-Copy **all or selected** Spotify playlists — including **Liked Songs** — to **YouTube Music**.
-
-- Matches by title/artist (+ duration) with retries
-- Treats **Liked Songs** as a regular playlist
-- Resumable & idempotent via `transfer_state.json`
-- CLI usage with environment variables
-
-> ⚠️ Never commit credentials (`.env`, `oauth.json`, `.spotipy_cache`, `transfer_state.json`).
+A Python script to copy **Spotify playlists (including Liked Songs)** into **YouTube Music**.
 
 ---
 
-## 1) Setup
+## Features
+- Transfers all or selected playlists from Spotify to YouTube Music
+- Treats **Liked Songs** as a playlist called *Liked Songs*
+- Resumable & idempotent via `transfer_state.json`
+- Track matching by title, artist, and duration
+- Robust batch adding with retries and failure report (`ytm_add_failures.csv`)
 
-### Create and activate a virtualenv
+---
+
+## Requirements
+
+- Python 3.10+
+- A Spotify Developer application (for API access)
+- A Google Cloud project with **YouTube Data API v3** enabled and OAuth client credentials created (type: *TVs and Limited Input devices*)
+
+---
+
+## Setup
+
+### 1. Clone and install dependencies
 ```bash
+git clone https://github.com/<you>/spotify-ytmusic-transfer.git
+cd spotify-ytmusic-transfer
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Spotify Developer app
-1. Go to https://developer.spotify.com/dashboard → **Create app**.
-2. Add Redirect URI: `http://127.0.0.1:8080/callback`.
+### 2. Spotify Developer App
+1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and **Create app**.
+2. Under *Redirect URIs* add:
+   ```
+   http://127.0.0.1:8080/callback
+   ```
+   (⚠️ Use `127.0.0.1`, not `localhost` — Spotify deprecated localhost.)
 3. Copy **Client ID** and **Client Secret**.
-4. Copy `.env.example` to `.env` and fill values:
-   ```env
-   SPOTIPY_CLIENT_ID=...
-   SPOTIPY_CLIENT_SECRET=...
+4. Create a `.env` file from `.env.example` and fill in:
+   ```ini
+   SPOTIPY_CLIENT_ID=your_client_id
+   SPOTIPY_CLIENT_SECRET=your_client_secret
    SPOTIPY_REDIRECT_URI=http://127.0.0.1:8080/callback
    ```
-5. First run will open a browser to grant scopes:
-   - `playlist-read-private`, `playlist-read-collaborative`, `user-library-read`
 
-### YouTube Music OAuth (Google)
-1. In **Google Cloud Console**, enable **YouTube Data API v3**.
-2. Configure **OAuth consent screen** → type **External** → add yourself under **Test users**.
-3. **Credentials** → **Create credentials** → **OAuth client ID** → *TVs and Limited Input devices*.
-4. Run device flow to create `oauth.json`:
+### 3. YouTube Music OAuth Setup
+1. In [Google Cloud Console](https://console.cloud.google.com/), enable **YouTube Data API v3**.
+2. Configure **OAuth consent screen** (External, add yourself as a *Test User*).
+3. Create **OAuth client credentials** with type *TVs and Limited Input devices*.
+4. Install `ytmusicapi` if not already:  
+   ```bash
+   pip install ytmusicapi
+   ```
+5. Run the device flow:
    ```bash
    ytmusicapi oauth
    ```
-   Then set `YTMUSIC_OAUTH` in your `.env` if you don't put it at `~/oauth.json`.
+   - Paste your `client_id` and `client_secret` from the Cloud Console
+   - Complete the device login flow
+   - A file `oauth.json` will be created
+6. Set an environment variable pointing to it (or place it in `~/oauth.json`):
+   ```bash
+   export YTMUSIC_OAUTH=/path/to/oauth.json
+   ```
+   You can also add to `.env`:
+   ```ini
+   YTMUSIC_OAUTH=/path/to/oauth.json
+   YTMUSIC_CLIENT_ID=your_google_client_id
+   YTMUSIC_CLIENT_SECRET=your_google_client_secret
+   ```
 
 ---
 
-## 2) Run
+## Running
 
+Transfer everything (all playlists + Liked Songs):
 ```bash
-# Transfer everything (all playlists + Liked Songs)
 python spotify_to_ytm.py
+```
 
-# Only selected playlists (comma-separated exact names)
-INCLUDE_PLAYLISTS="Liked Songs, Vibes" python spotify_to_ytm.py
+Transfer only specific playlists:
+```bash
+INCLUDE_PLAYLISTS="Liked Songs, Roadtrip" python spotify_to_ytm.py
+```
 
-# Exclude specific playlists
+Exclude certain playlists:
+```bash
 EXCLUDE_PLAYLISTS="Discover Weekly, Release Radar" python spotify_to_ytm.py
 ```
 
-### Notes
-- Stop anytime with Ctrl+C; rerun resumes work without duplicating.
-- After adding, the script prints: **attempted / added / failed** and current YTM playlist size.
-- YTM can dedupe or hide unavailable tracks; final visible count may be lower than attempted.
+---
+
+## Outputs
+
+- Creates playlists in YouTube Music (private by default)
+- Progress printed to console
+- Writes `transfer_state.json` for resumability
+- Writes `ytm_add_failures.csv` listing rejected/missing items
 
 ---
 
-## 3) Troubleshooting
+## Troubleshooting
 
-**Spotify 403: Insufficient client scope**  
-Delete `.spotipy_cache` and rerun to re-grant scopes.
+**403 Insufficient client scope (Spotify):**  
+Delete `.spotipy_cache` and rerun. Make sure `user-library-read` is in your scopes.
 
-**Invalid redirect URI**  
-Ensure code and Spotify dashboard both use `http://127.0.0.1:8080/callback` exactly.
+**Invalid redirect URI (Spotify):**  
+Must exactly match `http://127.0.0.1:8080/callback` in both code and dashboard.
 
-**YouTube auth errors**  
-Re-run `ytmusicapi oauth` to regenerate a full `oauth.json` (with client_id/secret + refresh_token). Ensure YouTube Data API v3 is enabled and your account is a Test user.
+**YouTube Music errors about `oauth_credentials`:**  
+Ensure you’re using an `OAuthCredentials` object. Re-run `ytmusicapi oauth` and set `YTMUSIC_OAUTH` properly.
+
+**Playlist counts differ between Spotify and YTM:**  
+- YT Music deduplicates songs
+- Some songs unavailable in your region
+- Some “added” videos are hidden/unplayable
 
 ---
 
-## 4) Security
-- Keep secrets out of Git; see `.gitignore`.
-- Consider separate Google projects for testing vs personal use.
+## Security
+
+⚠️ **Never commit secrets or tokens** (`.env`, `oauth.json`, `.spotipy_cache`, `transfer_state.json`).  
+Use `.gitignore` provided.
+
+---
+
+## License
+
+MIT License © 2025
